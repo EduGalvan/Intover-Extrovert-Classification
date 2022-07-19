@@ -1,0 +1,193 @@
+import numpy as np
+import pandas as pd
+
+from nltk.corpus import stopwords
+
+from tensorflow.keras.preprocessing.text import Tokenizer
+from tensorflow.keras.preprocessing.sequence import pad_sequences
+
+from sklearn.model_selection import train_test_split
+
+import tensorflow as tf
+from keras.layers.embeddings import Embedding
+import nltk
+nltk.download('stopwords')
+
+data = pd.read_csv('/content/drive/MyDrive/mbti_1.csv')
+# In the first place we are going to make a wordcloud with the most used words used by each personality type
+
+stop_words = stopwords.words('english')
+
+texts = data['posts'].copy()
+texts = [text.lower() for text in texts ]
+texts = [text.split() for text in texts ]
+texts = [[word.strip() for word in text] for text in texts]
+texts = [[word for word in text if word not in stop_words ] for text in texts]
+
+data['words'] = texts
+
+data['class'] = 0
+for x in data.index:
+  if data.loc[x, 'type'][0]== 'E':
+    data.loc[x, 'class'] = 1
+  else:
+    data.loc[x, 'class'] = 2
+
+introvert_words = [] #extrovertido 1, introvertido 2
+for x in data.index:
+  if data.loc[x, 'class'] == 2:
+    introvert_words.append(data.loc[x, 'words'])
+
+
+extrovert_words = [] #extrovertido 1, introvertido 2
+for x in data.index:
+  if data.loc[x, 'class'] == 1:
+    extrovert_words.append(data.loc[x, 'words'])
+
+introvert_word_list = []
+
+extrovert_word_list = []
+
+for x in introvert_words:
+  for y in x:
+    introvert_word_list.append(y)
+    
+
+for x in extrovert_words:
+  for y in x:
+    extrovert_word_list.append(y)
+
+import matplotlib.pyplot as plt
+from wordcloud import WordCloud
+
+unique_string= " ".join(introvert_word_list)
+wordcloud = WordCloud(width = 1000, height = 500).generate(unique_string)
+plt.figure(figsize=(15,8))
+plt.imshow(wordcloud)
+plt.axis("off")
+plt.savefig("your_file_name"+".png", bbox_inches='tight')
+
+unique_string= " ".join(extrovert_word_list)
+wordcloud = WordCloud(width = 1000, height = 500).generate(unique_string)
+plt.figure(figsize=(15,8))
+plt.imshow(wordcloud)
+plt.axis("off")
+plt.savefig("your_file_name"+".png", bbox_inches='tight')
+
+stop_words = stopwords.words('english')
+
+texts = data['posts'].copy()
+texts = [text.lower() for text in texts ]
+texts = [text.split() for text in texts ]
+texts = [[word.strip() for word in text] for text in texts]
+texts = [[word for word in text if word not in stop_words ] for text in texts]
+
+data['words'] = texts
+
+def preprocess_input(df):
+  texts = df['posts'].copy()
+  labels = df['type'].copy()
+
+  stop_words = stopwords.words('english')
+
+  texts = [text.lower() for text in texts ]
+  texts = [text.split() for text in texts ]
+  texts = [[word.strip() for word in text] for text in texts]
+  texts = [[word for word in text if word not in stop_words ] for text in texts]
+
+
+
+  vocab_lenght = 10000
+
+  tokenizer = Tokenizer(num_words=vocab_lenght)
+  tokenizer.fit_on_texts(texts)
+  texts = tokenizer.texts_to_sequences(texts)
+
+  max_seq_len = np.max([len(text) for text in texts])
+
+  texts = pad_sequences(texts, maxlen= max_seq_len, padding= 'post')
+  
+  #Procesar las etiquetas
+
+  label_values = ['INFJ', 'ENTP', 'INTP', 'INTJ', 'ENTJ', 'ENFJ', 'INFP', 'ENFP',
+       'ISFP', 'ISTP', 'ISFJ', 'ISTJ', 'ESTP', 'ESFP', 'ESTJ', 'ESFJ']
+
+  label_mapping = {label: np.int(label[0] == 'E') for label in label_values }
+
+  labels = labels.replace(label_mapping)
+  labels = np.array(labels)
+
+  return texts, labels, max_seq_len, vocab_lenght, label_mapping
+
+
+
+
+
+
+
+
+texts, labels, max_seq_len, vocab_lenght, label_mapping = preprocess_input(data)
+
+texts = preprocess_text(data)
+
+df = pd.DataFrame(texts)
+
+print("Frases en el texto:\n", texts.shape)
+print("\nEtiquetas:\n", labels.shape)
+print("\nLongitud maxima de cada frase:\n", max_seq_len)
+print("\nLongitud maxima de vocabulario:\n", vocab_lenght)
+print("\nLabel mapping:\n", label_mapping)
+
+
+
+texts_train, texts_test, labels_train, labels_test = train_test_split(texts, labels, train_size=0.7, random_state=220)
+
+
+
+texts
+
+embedding_dim = 512
+inputs = tf.keras.Input(shape = (max_seq_len,))
+embedding = tf.keras.layers.Embedding(
+    input_dim = vocab_lenght,
+    output_dim = embedding_dim,
+    input_length = max_seq_len
+)(inputs)
+
+
+gru = tf.keras.layers.Bidirectional(tf.keras.layers.GRU(
+    units = 256,
+    return_sequences = True
+))(embedding)
+
+flatten = tf.keras.layers.Flatten()(gru)
+
+outputs = tf.keras.layers.Dense(1, activation = 'sigmoid')(flatten)
+
+model = tf.keras.Model(inputs, outputs)
+
+model.compile(
+    optimizer = 'adam',
+    loss = 'binary_crossentropy',
+    metrics = [
+               'accuracy',
+               tf.keras.metrics.AUC(name = 'auc')
+
+    ]
+)
+
+
+
+
+hisotory = model.fit(
+    texts_train,
+    labels_train,
+    validation_split = 0.2,
+    batch_size = 32,
+    epochs = 6
+
+    
+)
+
+
+model.evaluate(texts_test, labels_test)
